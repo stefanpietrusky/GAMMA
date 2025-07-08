@@ -140,10 +140,10 @@ def generate_gml():
     Create 3 multiple-choice questions on the topic:  {topic} with difficulty level: {difficulty}.
     Please return the output exactly in the following GML format (without additional comments or formatting):
 
-    question = [];
-    question[0] = "[Question 1]";
-    question[1] = "[Question 2]";
-    question[2] = "[Question 3]";
+    questions = [];
+    questions[0] = "[Question 1]";
+    questions[1] = "[Question 2]";
+    questions[2] = "[Question 3]";
 
     answers = [];
     answers[0] = ["[Answer 1-1]", "[Answer 1-2]", "[Answer 1-3]"];
