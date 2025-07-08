@@ -1,25 +1,25 @@
-const questions = [];
+questions = [];
 questions[0] = "What is the capital of France?";
 questions[1] = "Which planet is known as the Red Planet?";
 questions[2] = "In what year did the Titanic sink?";
 questions[3] = "What is the largest ocean on Earth?";
 questions[4] = "Who wrote 'Romeo and Juliet'?";
 
-const answers = [];
+answers = [];
 answers[0] = ["Paris", "Lyon", "Marseille"];
 answers[1] = ["Venus", "Mars", "Jupiter"];
 answers[2] = ["1905", "1912", "1920"];
 answers[3] = ["Atlantic", "Indian", "Pacific"];
 answers[4] = ["Shakespeare", "Dickens", "Austen"];
 
-let currentQuestion = 0;
+currentQuestion = 0;
 
-const correctAnswer = [];
+correctAnswer = [];
 correctAnswer[0] = 0; // Paris
 correctAnswer[1] = 1; // Mars
 correctAnswer[2] = 1; // 1912
 correctAnswer[3] = 2; // Pacific
 correctAnswer[4] = 0; // Shakespeare
 
-let soundRight = -1;
-let soundWrong = -1;
+soundRight = -1;
+soundWrong = -1;
