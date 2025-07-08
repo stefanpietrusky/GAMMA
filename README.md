@@ -13,6 +13,8 @@ In the current version, users have various options for generating questions on a
 
 ![GameMaker Studio 2 IDE with mc_mechanic example (Gif by author)](images/GMS2_IDE.gif)
 
+The repository is being expanded step by step.
+
 ## Installing and running the application 
 1. Clone this repository on your local computer: 
 ```bash 
