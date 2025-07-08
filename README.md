@@ -15,7 +15,7 @@ In the current version, users have various options for generating questions on a
 
 Alternatively, you can also upload your own .txt file in the appropriate format. In the IDE of GMS2, the code is replaced directly in the corresponding event of the object and the app can be started with new questions.
 
-![GameMaker Studio 2 IDE with mc_mechanic example (Gif by author)](images/)
+![GameMaker Studio 2 IDE with mc_mechanic example (Gif by author)](images/GMS2_IDE.gif)
 
 The repository is being expanded step by step.
 
