@@ -32,7 +32,7 @@ pip install -r requirements.txt
 4. Install [Ollama](https://ollama.com/) and load the model [Llama3.2](https://ollama.com/library/llama3.2)
 5. Install Google Gemini CLI as described [here](https://github.com/google-gemini/gemini-cli)
 6. Get a Key for the OpenAI API [here](https://platform.openai.com/docs/overview)
-7. Install the learning mechanics [mc_mechanic.yymps] in your GMS2 Project via "Tools" - "Import Local Package"
+7. Open a new project in GMS2 and install the learning mechanics [mc_mechanic.yymps] via "Tools" - "Import Local Package"
 8. Start the app with:
 ```bash 
 python app.py
