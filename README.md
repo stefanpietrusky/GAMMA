@@ -7,6 +7,11 @@ This repository, developed by Stefan Pietrusky, describes a prototype that is to
 
 The principle is demonstrated below as an example. As the mechanics have currently been developed for games with a basic resolution of 3840 x 2160, it must be adapted accordingly for your own tests in official GMS2 templates. The exact mode of operation is explained in a separate article that has not yet been published.
 
+## GAMMA Structure
+The structure of the current [V1] GAMMA app is shown below. 
+
+![GAMMA V1 Structure and mode of operation (SVG created with Mermaid)](images/GAMMAV1.svg)
+
 ## Interface of the GAMMA app
 
 ![GAMMA V1 Interface (Gif by author)](images/GAMMAV1.gif)
