@@ -7,6 +7,8 @@ This repository, developed by Stefan Pietrusky, describes a prototype that is to
 
 The principle is demonstrated below as an example. As the mechanics have currently been developed for games with a basic resolution of 3840 x 2160, it must be adapted accordingly for your own tests in official GMS2 templates. The exact mode of operation is explained in a separate article that has not yet been published.
 
+> **⚠️ Work in Progress:** This prototyp is currently under active development. While I make it available for research purposes, please be aware that there will be some changes to the functional structure. I recognize that some current technical design decisions may not be optimal and are subject to revision. Researchers using this prototyp should expect potential updates and changes. I recommend checking back regularly for updates and versioning information.
+
 ## GAMMA Structure
 The structure of the current [V1] GAMMA app is shown below. 
 
