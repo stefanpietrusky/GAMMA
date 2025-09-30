@@ -1,7 +1,8 @@
 """
 title: GAMMA V1 [GAME AUTOMATED MECHANICS MODIFICATION & ADAPTATION]
 author: stefanpietrusky
-author_url: https://downchurch.studio/
+author_url1: https://downchurch.studio/
+author_url2: https://urlz.fr/uj1I [CAEDHET/HCDH Heidelberg University]
 version: 1.0
 """
 
