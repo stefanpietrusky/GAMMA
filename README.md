@@ -17,8 +17,6 @@ The current version uses the Ollama Cloud model [qwen3.5:397b-cloud](https://oll
 
 The repository is being expanded step by step.
 
-![GAMMA V2 Interface (Gif by author)](images/GAMMAV2_2.gif)
-
 ## Installing and running the application 
 1. Clone this repository on your local computer: 
 ```bash 
