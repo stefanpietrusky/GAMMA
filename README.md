@@ -28,9 +28,9 @@ git clone https://github.com/stefanpietrusky/gamma.git
 ```bash 
 pip install -r requirements.txt
 ```
-3. Install the IDE GameMaker Studio 2 [GMS2](https://gamemaker.io/de).
+3. Install the IDE GameMaker Studio 2 [GMS2](https://gamemaker.io/de)
 4. Create a [Ollama](https://ollama.com/) account and a API-Key to use cloud models
-5. Update the value of `OLLAMA_CLOUD_API_KEY=` in the .env file according
+5. Update the value of `OLLAMA_CLOUD_API_KEY=` in the `.env` file to match your API key
 6. Clone the repository for the first [EDUMING game template] (https://github.com/stefanpietrusky/EDUMING_GAME_1_ARENA_SHOOTER_TEMPLATE)
 7. Start the app with:
 ```bash 
