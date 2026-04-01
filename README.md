@@ -1,7 +1,7 @@
 ![](images/GAMMA_Logo.png)
 
 # GAMMA V2 APP
-## Game Automated Mechanics Modificatin & Adaptation
+## GAME ADAPTATION, MECHANICS & MODIFICATION ASSISTANT
 
 This repository, developed by Stefan Pietrusky, describes a prototype that is to be used as part of the EDUMING concept [[1]](https://arxiv.org/abs/2504.13878). GAMME combines project exploration code editing automated code summarization and AI driven support in one environment to make the modification and extension of GameMaker projects easier and more efficient.
 
