@@ -5,7 +5,7 @@ author_url: https://downchurch.studio/
 version: 2.0
 """
 
-import os, re
+import os, re, json
 import yaml
 import requests
 from datetime import datetime
@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OLLAMA_CLOUD_MODEL = "qwen3.5:397b-cloud"
+OLLAMA_CLOUD_MODEL = "gpt-oss:120b-cloud"
 OLLAMA_CLOUD_API_KEY = os.getenv("OLLAMA_CLOUD_API_KEY", "").strip()
 OLLAMA_CLOUD_BASE_URL = os.getenv("OLLAMA_CLOUD_BASE_URL", "https://api.ollama.com").rstrip("/")
 OLLAMA_TIMEOUT_SEC = float(os.getenv("OLLAMA_TIMEOUT_SEC", "180"))
@@ -119,30 +119,30 @@ def build_all_objects_summary(project_dir: str) -> str:
                       .append((full, ext))
 
     with open(output_file, "w", encoding="utf-8") as out:
-        out.write("// ======================================================\\n")
-        out.write("// Combined GML code of all objects\\n")
-        out.write(f"// Generated on: {datetime.now():%Y-%m-%d %H:%M:%S}\\n")
-        out.write(f"// Project: {project_dir}\\n")
-        out.write("// ======================================================\\n\\n")
+        out.write("// ======================================================\n")
+        out.write("// Combined GML code of all objects\n")
+        out.write(f"// Generated on: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+        out.write(f"// Project: {project_dir}\n")
+        out.write("// ======================================================\n\n")
 
         for obj in sorted(obj_events):
-            out.write(f"// === Object: {obj} ===\\n\\n")
+            out.write(f"// === Object: {obj} ===\n\n")
             for event in sorted(obj_events[obj]):
-                out.write(f"// --- Event: {event} ---\\n")
+                out.write(f"// --- Event: {event} ---\n")
                 for path, ext in sorted(obj_events[obj][event], key=lambda x: x[0]):
-                    out.write(f"// File: {os.path.basename(path)}\\n")
+                    out.write(f"// File: {os.path.basename(path)}\n")
                     if ext == ".gml":
                         with open(path, "r", encoding="utf-8") as f:
-                            out.write(f.read().rstrip() + "\\n\\n")
+                            out.write(f.read().rstrip() + "\n\n")
                     else:
                         with open(path, "r", encoding="utf-8") as f:
                             data = yaml.safe_load(f) or {}
                         code = data.get("gml", "")
-                        out.write(code.rstrip() + "\\n\\n")
+                        out.write(code.rstrip() + "\n\n")
 
-            out.write("\\n")
+            out.write("\n")
 
-        out.write("// === End of all objects ===\\n")
+        out.write("// === End of all objects ===\n")
 
     return output_file
 
@@ -151,8 +151,12 @@ def read_combined_summary() -> str:
     summary_path = os.path.join(APP_DIR, COMBINED_CODE_FILENAME)
     if not os.path.isfile(summary_path):
         return ""
+
     with open(summary_path, "r", encoding="utf-8") as f:
-        return f.read()
+        text = f.read()
+
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n")
+    return text
 
 @app.route('/object-events', methods=['POST'])
 def object_events():
@@ -323,9 +327,12 @@ def save_event():
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
+        summary_file = build_all_objects_summary(project_dir)
+
         return jsonify({
             "status": "Event file successfully saved",
-            "path": file_path
+            "path": file_path,
+            "summary_file": summary_file
         })
     except Exception as e:
         return jsonify({"error": f"Error while saving the event file: {e}"}), 500
@@ -371,6 +378,319 @@ def call_ollama_cloud(prompt: str) -> str:
     raw_text = (data.get("response") or "").strip()
     return clean_model_response(raw_text)
 
+def extract_outer_json(text: str) -> str:
+    text = (text or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end + 1]
+    return text
+
+def extract_event_reference_map(summary_text: str) -> dict:
+    object_names = re.findall(r"// === Object: ([^=\n]+) ===", summary_text or "")
+    known = {name.strip() for name in object_names if name.strip()}
+    event_map = {}
+
+    section_pattern = re.compile(
+        r"// === Object: ([^=\n]+) ===\n\n(.*?)(?=\n// === Object: |\n// === End of all objects ===)",
+        re.DOTALL
+    )
+    event_pattern = re.compile(
+        r"// --- Event: ([^\n]+) ---\n(.*?)(?=\n// --- Event: |\Z)",
+        re.DOTALL
+    )
+
+    for match in section_pattern.finditer(summary_text or ""):
+        source_obj = match.group(1).strip()
+        block = match.group(2)
+
+        for event_match in event_pattern.finditer(block):
+            event_name = event_match.group(1).strip()
+            event_block = event_match.group(2)
+
+            refs = sorted(set(re.findall(r"\b(obj_[A-Za-z0-9_]+|o_[A-Za-z0-9_]+)\b", event_block)))
+            for target_obj in refs:
+                if target_obj in known and target_obj != source_obj:
+                    event_map.setdefault((source_obj, target_obj), set()).add(event_name)
+
+    return {key: sorted(values) for key, values in event_map.items()}
+
+
+def enrich_graph_with_event_data(graph: dict, summary_text: str) -> dict:
+    if not isinstance(graph, dict):
+        return {"nodes": [], "edges": []}
+
+    event_map = extract_event_reference_map(summary_text)
+    edges_out = []
+
+    for edge in graph.get("edges", []) or []:
+        if not isinstance(edge, dict):
+            continue
+
+        src = (edge.get("from") or "").strip()
+        tgt = (edge.get("to") or "").strip()
+        label = (edge.get("label") or "related_to").strip()
+        title = (edge.get("title") or label).strip()
+
+        event_names = edge.get("event_names") or event_map.get((src, tgt), [])
+
+        if event_names:
+            events_text = ", ".join(event_names)
+            if "Events:" not in title and "Referenz in Events:" not in title:
+                title = f"{title}\nEvents: {events_text}" if title else f"Events: {events_text}"
+
+        edges_out.append({
+            "from": src,
+            "to": tgt,
+            "label": label,
+            "title": title,
+            "event_names": event_names
+        })
+
+    return {
+        "nodes": graph.get("nodes", []) or [],
+        "edges": edges_out
+    }
+
+
+def filter_connected_nodes(graph: dict, selected_object: str = "", keep_selected: bool = True) -> dict:
+    if not isinstance(graph, dict):
+        return {"nodes": [], "edges": []}
+
+    nodes = graph.get("nodes", []) or []
+    edges = graph.get("edges", []) or []
+
+    connected_ids = set()
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        src = (edge.get("from") or "").strip()
+        tgt = (edge.get("to") or "").strip()
+        if src:
+            connected_ids.add(src)
+        if tgt:
+            connected_ids.add(tgt)
+
+    if keep_selected and selected_object:
+        connected_ids.add(selected_object)
+
+    filtered_nodes = []
+    valid_ids = set()
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_id = (node.get("id") or "").strip()
+        if node_id and node_id in connected_ids:
+            filtered_nodes.append(node)
+            valid_ids.add(node_id)
+
+    filtered_edges = []
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        src = (edge.get("from") or "").strip()
+        tgt = (edge.get("to") or "").strip()
+        if src in valid_ids and tgt in valid_ids:
+            filtered_edges.append(edge)
+
+    return {
+        "nodes": filtered_nodes,
+        "edges": filtered_edges
+    }
+
+def normalize_project_graph(graph: dict, selected_object: str = "") -> dict:
+    if not isinstance(graph, dict):
+        return {"nodes": [], "edges": []}
+
+    nodes_in = graph.get("nodes", []) or []
+    edges_in = graph.get("edges", []) or []
+
+    nodes = []
+    node_ids = set()
+
+    for node in nodes_in:
+        if not isinstance(node, dict):
+            continue
+
+        node_id = (node.get("id") or node.get("label") or "").strip()
+        label = (node.get("label") or node_id).strip()
+        title = (node.get("title") or label).strip()
+
+        if not node_id or node_id in node_ids:
+            continue
+
+        item = {
+            "id": node_id,
+            "label": label,
+            "title": title
+        }
+
+        if selected_object and node_id == selected_object:
+            item["is_selected"] = True
+
+        nodes.append(item)
+        node_ids.add(node_id)
+
+    edge_map = {}
+
+    for edge in edges_in:
+        if not isinstance(edge, dict):
+            continue
+
+        src = (edge.get("from") or "").strip()
+        tgt = (edge.get("to") or "").strip()
+        label = (edge.get("label") or "related_to").strip()
+        title = (edge.get("title") or label).strip()
+        event_names = sorted({
+            str(name).strip()
+            for name in (edge.get("event_names") or [])
+            if str(name).strip()
+        })
+
+        if not src or not tgt or src not in node_ids or tgt not in node_ids or src == tgt:
+            continue
+
+        key = (src, tgt, label)
+
+        if key not in edge_map:
+            edge_map[key] = {
+                "from": src,
+                "to": tgt,
+                "label": label,
+                "title": title,
+                "event_names": event_names
+            }
+        else:
+            existing = edge_map[key]
+            existing["event_names"] = sorted(set(existing.get("event_names", [])) | set(event_names))
+            if not existing.get("title") and title:
+                existing["title"] = title
+
+    edges = list(edge_map.values())
+
+    return filter_connected_nodes(
+        {"nodes": nodes, "edges": edges},
+        selected_object=selected_object,
+        keep_selected=True
+    )
+
+def build_project_graph_fallback(summary_text: str, selected_object: str = "") -> dict:
+    object_names = re.findall(r"// === Object: ([^=\n]+) ===", summary_text or "")
+    object_names = [name.strip() for name in object_names if name.strip()]
+
+    nodes = []
+    for obj in object_names:
+        node = {
+            "id": obj,
+            "label": obj,
+            "title": obj
+        }
+        if selected_object and obj == selected_object:
+            node["is_selected"] = True
+        nodes.append(node)
+
+    event_map = extract_event_reference_map(summary_text)
+    edges = []
+
+    for (source_obj, target_obj), event_names in sorted(event_map.items()):
+        edges.append({
+            "from": source_obj,
+            "to": target_obj,
+            "label": "references",
+            "title": f"Referenz in Events: {', '.join(event_names)}",
+            "event_names": event_names
+        })
+
+    return filter_connected_nodes(
+        {"nodes": nodes, "edges": edges},
+        selected_object=selected_object,
+        keep_selected=True
+    )
+
+def build_project_knowledge_graph(project_dir: str, selected_object: str = "") -> dict:
+    summary_text = read_combined_summary()
+
+    if not summary_text.strip():
+        build_all_objects_summary(project_dir)
+        summary_text = read_combined_summary()
+
+    if not summary_text.strip():
+        return {"nodes": [], "edges": []}
+
+    prompt = f"""
+    You analyze a GameMaker project summary and return ONLY valid JSON.
+
+    Task:
+    Create a knowledge graph of the project structure based on the combined object code.
+
+    Important rules:
+    - Return JSON only.
+    - No markdown.
+    - No explanations.
+    - Focus mainly on GameMaker objects as nodes.
+    - Create edges only where an interaction or dependency is plausible from the code.
+    - Good edge labels are for example:
+    creates, destroys, collides_with, references, controls, depends_on, calls, changes_room_to, inherits_from
+    - Keep labels short.
+    - Maximum 80 nodes.
+    - Maximum 140 edges.
+
+    Selected object:
+    {selected_object or "none"}
+
+    Required JSON schema:
+    {{
+    "nodes": [
+        {{
+        "id": "obj_player",
+        "label": "obj_player",
+        "title": "short description"
+        }}
+    ],
+    "edges": [
+        {{
+        "from": "obj_player",
+        "to": "obj_enemy",
+        "label": "collides_with",
+        "title": "evidence or context"
+        }}
+    ]
+    }}
+
+    Project summary:
+    {summary_text}
+    """.strip()
+
+    try:
+        raw = call_ollama_cloud(prompt)
+        parsed = json.loads(extract_outer_json(raw))
+        normalized = normalize_project_graph(parsed, selected_object)
+        enriched = enrich_graph_with_event_data(normalized, summary_text)
+
+        if enriched.get("nodes"):
+            return enriched
+    except Exception:
+        pass
+
+    fallback = build_project_graph_fallback(summary_text, selected_object)
+    return enrich_graph_with_event_data(fallback, summary_text)
+
+@app.route('/project-knowledge-graph', methods=['POST'])
+def project_knowledge_graph():
+    data = request.json or {}
+    project_dir = data.get("project_dir", "").strip()
+    object_name = data.get("object_name", "").strip()
+
+    if not project_dir:
+        return jsonify({"error": "Project directory is required."}), 400
+
+    try:
+        graph = build_project_knowledge_graph(project_dir, object_name)
+        return jsonify(graph)
+    except Exception as e:
+        return jsonify({"error": f"Error while creating the project knowledge graph: {e}"}), 500
+
 HTML_CONTENT = """
 <!DOCTYPE html>
 <html lang="en">
@@ -379,6 +699,7 @@ HTML_CONTENT = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GAMMA</title>
     <link rel="stylesheet" href="/styles.css">
+    <script defer src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -398,6 +719,10 @@ HTML_CONTENT = """
             <option value="" disabled selected>Select a folder...</option>
         </select>
         </div>
+
+        <h2 id="project-graph-title" style="display:none;">PROJECT KNOWLEDGE GRAPH</h2>
+        <div id="project-knowledge-graph" style="display:none;"></div>
+        <div id="graph-connection-info" class="graph-connection-info" style="display:none;"></div>
 
         <div id="object-events-container" class="result-container" style="display:none;">
             <h2>OBJECT EVENTS</h2>
@@ -628,6 +953,41 @@ input[type="color"]:focus {
 #save-event-btn:hover {
     background-color: #262626;
     color: #ffffff;
+}
+
+#project-knowledge-graph {
+    display: none;
+    width: 100%;
+    height: 460px;
+    margin-top: 10px;
+    border: 3px solid #262626;
+    border-radius: 12px;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.graph-connection-info {
+    display: none;
+    margin-top: 10px;
+    padding: 14px;
+    border: 3px solid #262626;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #262626;
+}
+
+.graph-connection-info h3 {
+    margin: 0 0 10px 0;
+}
+
+.graph-connection-group {
+    padding: 10px 0;
+    border-top: 2px solid #e6e6e6;
+}
+
+.graph-connection-group:first-of-type {
+    border-top: none;
+    padding-top: 0;
 }
 
 #project-chat-container {
@@ -958,17 +1318,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectedEventName = document.getElementById('selected-event-name');
     const saveEventBtn = document.getElementById('save-event-btn');
 
+    const projectGraphContainer = document.getElementById('project-graph-container');
+    const projectGraphTitle = document.getElementById('project-graph-title');
+    const projectKnowledgeGraph = document.getElementById('project-knowledge-graph');
+    const graphConnectionInfo = document.getElementById('graph-connection-info');
+
     const chatOutput = document.getElementById('chat-output');
     const chatInput = document.getElementById('chat-input');
     const sendChatBtn = document.getElementById('send-chat-btn');
 
     let currentEventFilename = "";
+    let projectGraphNetwork = null;
+    let projectGraphDataCache = null;
+    let projectGraphNodes = null;
+    let projectGraphEdges = null;
 
     projectDirInput.addEventListener('blur', async () => {
         const projectDir = projectDirInput.value.trim();
         if (!projectDir) return;
 
         try {
+            projectGraphDataCache = null;
+            destroyProjectKnowledgeGraph();
+            clearGraphConnectionInfo();
+
             const [objectsRes, summaryRes] = await Promise.all([
                 fetch('/list-objects', {
                     method: 'POST',
@@ -1004,6 +1377,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             showMessage("Code-Zusammenfassung erstellt: " + summaryData.filename, 'success', 2500);
+            await refreshProjectKnowledgeGraph('', true);
         } catch (err) {
             console.error(err);
             showMessage("An error occurred while loading the project data.", 'error');
@@ -1019,9 +1393,11 @@ document.addEventListener('DOMContentLoaded', function() {
         selectedEventName.textContent = '';
         currentEventFilename = '';
         eventEditorContainer.style.display = 'none';
+        clearGraphConnectionInfo();
 
         if (!projectDir || !objectName) {
             objectEventsContainer.style.display = 'none';
+            updateProjectKnowledgeGraphSelection('');
             return;
         }
 
@@ -1045,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (events.length === 0) {
                 showError("No event files found for this object.");
                 objectEventsContainer.style.display = 'none';
+                updateProjectKnowledgeGraphSelection(objectName);
                 return;
             }
 
@@ -1063,6 +1440,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             objectEventsContainer.style.display = 'block';
+            updateProjectKnowledgeGraphSelection(objectName);
         })
         .catch(error => {
             console.error("Error while loading object events:", error);
@@ -1088,6 +1466,309 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (container.contains(alertDiv)) container.removeChild(alertDiv);
             }, { once: true });
         }, timeout_ms);
+    }
+
+    function showError(msg, timeout_ms = 5000) {
+        showMessage(msg, 'error', timeout_ms);
+    }
+
+    function clearGraphConnectionInfo() {
+        if (!graphConnectionInfo) return;
+        graphConnectionInfo.innerHTML = '';
+        graphConnectionInfo.style.display = 'none';
+    }
+
+    function extractEventNamesFromEdge(edge) {
+        if (!edge) return [];
+
+        if (Array.isArray(edge.event_names) && edge.event_names.length) {
+            return edge.event_names.filter(Boolean);
+        }
+
+        const title = String(edge.title || '');
+        const match = title.match(/(?:Referenz in Events|Events):\s*(.+)$/i);
+        if (!match) return [];
+
+        return match[1]
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean);
+    }
+
+    function showGraphConnectionInfoForNode(nodeId) {
+        if (!graphConnectionInfo || !projectGraphDataCache || !nodeId) return;
+
+        const relatedEdges = (projectGraphDataCache.edges || []).filter(edge =>
+            edge.from === nodeId || edge.to === nodeId
+        );
+
+        if (relatedEdges.length === 0) {
+            graphConnectionInfo.innerHTML = `
+                <h3>${escapeHtml(nodeId)}</h3>
+                <p>Für dieses Objekt wurden keine Verbindungen gefunden.</p>
+            `;
+            graphConnectionInfo.style.display = 'block';
+            return;
+        }
+
+        const items = relatedEdges.map(edge => {
+            const otherNode = edge.from === nodeId ? edge.to : edge.from;
+            const relation = escapeHtml(edge.label || 'related_to');
+            const eventNames = extractEventNamesFromEdge(edge);
+
+            return `
+                <div class="graph-connection-group">
+                    <div><strong>${escapeHtml(nodeId)}</strong> → <strong>${escapeHtml(otherNode)}</strong></div>
+                    <div>Beziehung: ${relation}</div>
+                    <div>Events: ${eventNames.length ? escapeHtml(eventNames.join(', ')) : 'Keine Event-Infos verfügbar'}</div>
+                </div>
+            `;
+        }).join('');
+
+        graphConnectionInfo.innerHTML = `
+            <h3>Verbindungen für ${escapeHtml(nodeId)}</h3>
+            ${items}
+        `;
+        graphConnectionInfo.style.display = 'block';
+    }
+
+    function updateProjectKnowledgeGraphSelection(selectedObject = '') {
+        if (!projectGraphNodes) return;
+
+        const updates = [];
+        projectGraphNodes.forEach(node => {
+            const isSelected = Boolean(selectedObject) && node.id === selectedObject;
+
+            updates.push({
+                id: node.id,
+                size: isSelected ? 24 : 18,
+                borderWidth: isSelected ? 4 : 2,
+                color: {
+                    background: '#ffffff',
+                    border: isSelected ? '#00FFCC' : '#262626',
+                    highlight: {
+                        background: '#ffffff',
+                        border: isSelected ? '#00FFCC' : '#262626'
+                    },
+                    hover: {
+                        background: '#ffffff',
+                        border: isSelected ? '#00FFCC' : '#262626'
+                    }
+                }
+            });
+        });
+
+        projectGraphNodes.update(updates);
+
+        if (projectGraphNetwork) {
+            if (selectedObject) {
+                projectGraphNetwork.selectNodes([selectedObject]);
+            } else {
+                projectGraphNetwork.unselectAll();
+            }
+        }
+    }
+
+    function destroyProjectKnowledgeGraph() {
+        if (projectGraphNetwork) {
+            projectGraphNetwork.destroy();
+            projectGraphNetwork = null;
+        }
+
+        projectGraphNodes = null;
+        projectGraphEdges = null;
+
+        if (projectKnowledgeGraph) {
+            projectKnowledgeGraph.innerHTML = '';
+            projectKnowledgeGraph.style.display = 'none';
+        }
+
+        if (projectGraphTitle) {
+            projectGraphTitle.style.display = 'none';
+        }
+    }
+
+    function renderProjectKnowledgeGraph(graphData, selectedObject = '') {
+        if (!projectKnowledgeGraph) return;
+
+        if (!window.vis) {
+            projectKnowledgeGraph.style.display = 'block';
+            projectKnowledgeGraph.innerHTML = '<div class="error">vis-network wurde nicht geladen.</div>';
+            return;
+        }
+
+        if (!graphData || !Array.isArray(graphData.nodes) || graphData.nodes.length === 0) {
+            destroyProjectKnowledgeGraph();
+            projectKnowledgeGraph.style.display = 'block';
+            projectKnowledgeGraph.innerHTML = '<div class="error">Keine verknüpften Objekte gefunden.</div>';
+            return;
+        }
+
+        destroyProjectKnowledgeGraph();
+
+        projectGraphDataCache = graphData;
+
+        projectGraphNodes = new vis.DataSet((graphData.nodes || []).map(n => {
+            const isSelected = Boolean(n.is_selected) || (selectedObject && n.id === selectedObject);
+
+            return {
+                id: n.id,
+                label: n.label || n.id,
+                title: n.title || n.label || n.id,
+                shape: 'dot',
+                size: isSelected ? 24 : 18,
+                borderWidth: isSelected ? 4 : 2,
+                color: {
+                    background: '#ffffff',
+                    border: isSelected ? '#00FFCC' : '#262626',
+                    highlight: { background: '#ffffff', border: isSelected ? '#00FFCC' : '#262626' },
+                    hover: { background: '#ffffff', border: isSelected ? '#00FFCC' : '#262626' }
+                },
+                font: {
+                    color: '#262626'
+                }
+            };
+        }));
+
+        projectGraphEdges = new vis.DataSet((graphData.edges || []).map((e, index) => ({
+            id: e.id || `${e.from}__${e.to}__${e.label || 'related_to'}__${index}`,
+            from: e.from,
+            to: e.to,
+            label: '',
+            title: e.title || e.label || '',
+            event_names: Array.isArray(e.event_names) ? e.event_names : [],
+            arrows: {
+                to: {
+                    enabled: true,
+                    type: 'triangle',
+                    scaleFactor: 0.55
+                }
+            },
+            smooth: {
+                type: 'dynamic'
+            },
+            width: 1.2,
+            color: {
+                color: '#262626',
+                highlight: '#262626',
+                hover: '#262626',
+                inherit: false
+            },
+            font: {
+                align: 'middle',
+                color: '#262626',
+                size: 12
+            }
+        })));
+
+        const options = {
+            interaction: {
+                hover: true,
+                tooltipDelay: 120,
+                navigationButtons: false,
+                keyboard: true,
+                dragNodes: true,
+                dragView: true,
+                zoomView: true
+            },
+            layout: {
+                improvedLayout: true,
+                randomSeed: 7
+            },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -85,
+                    centralGravity: 0.015,
+                    springLength: 190,
+                    springConstant: 0.05,
+                    damping: 0.7,
+                    avoidOverlap: 1
+                },
+                stabilization: {
+                    enabled: true,
+                    iterations: 250,
+                    updateInterval: 25
+                }
+            },
+            nodes: {
+                shape: 'dot',
+                scaling: {
+                    min: 16,
+                    max: 28
+                },
+                font: {
+                    size: 18
+                }
+            }
+        };
+
+        projectGraphNetwork = new vis.Network(
+            projectKnowledgeGraph,
+            { nodes: projectGraphNodes, edges: projectGraphEdges },
+            options
+        );
+
+        projectGraphNetwork.on('click', function(params) {
+            if (params.nodes && params.nodes.length > 0) {
+                showGraphConnectionInfoForNode(params.nodes[0]);
+                return;
+            }
+
+            clearGraphConnectionInfo();
+        });
+
+        if (projectGraphTitle) {
+            projectGraphTitle.style.display = 'block';
+        }
+
+        projectKnowledgeGraph.style.display = 'block';
+        updateProjectKnowledgeGraphSelection(selectedObject);
+    }
+
+    async function refreshProjectKnowledgeGraph(selectedObject = '', forceReload = false) {
+        const projectDir = projectDirInput.value.trim();
+        const effectiveSelection = selectedObject || objectSelect.value || '';
+
+        if (!projectDir) {
+            destroyProjectKnowledgeGraph();
+            clearGraphConnectionInfo();
+            return;
+        }
+
+        if (!forceReload && projectGraphDataCache) {
+            updateProjectKnowledgeGraphSelection(effectiveSelection);
+            return;
+        }
+
+        if (projectGraphTitle) {
+            projectGraphTitle.style.display = 'block';
+        }
+        projectKnowledgeGraph.innerHTML = '<p style="padding:12px;">KNOWLEDGE GRAPH WILL BE UPDATED ...</p>';
+
+        try {
+            const res = await fetch('/project-knowledge-graph', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_dir: projectDir,
+                    object_name: effectiveSelection
+                })
+            });
+
+            const data = await res.json();
+
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            projectGraphDataCache = data;
+            renderProjectKnowledgeGraph(projectGraphDataCache, effectiveSelection);
+        } catch (error) {
+            console.error("Error while loading knowledge graph:", error);
+            projectKnowledgeGraph.innerHTML = `<div class="error">Fehler beim Laden des Wissensgraphen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+        }
     }
 
     function loadEventContent(filename, activeButton) {
@@ -1128,7 +1809,8 @@ document.addEventListener('DOMContentLoaded', function() {
             showError("An error occurred while loading the event content.");
         });
     }
-    saveEventBtn.addEventListener('click', function() {
+    
+    saveEventBtn.addEventListener('click', async function() {
         const projectDir = projectDirInput.value.trim();
         const objectName = objectSelect.value;
         const content = eventEditor.value;
@@ -1138,29 +1820,32 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        fetch('/save-event', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_dir: projectDir,
-                object_name: objectName,
-                filename: currentEventFilename,
-                content: content
-            })
-        })
-        .then(res => res.json())
-        .then(data => {
+        try {
+            const res = await fetch('/save-event', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_dir: projectDir,
+                    object_name: objectName,
+                    filename: currentEventFilename,
+                    content: content
+                })
+            });
+
+            const data = await res.json();
+
             if (data.error) {
                 showMessage("Fehler: " + data.error, 'error');
                 return;
             }
 
             showMessage("Saved successfully: " + currentEventFilename, 'success', 2500);
-        })
-        .catch(error => {
+            projectGraphDataCache = null;
+            await refreshProjectKnowledgeGraph(objectName, true);
+        } catch (error) {
             console.error("Error while saving event content:", error);
             showError("An error occurred while saving the event.");
-        });
+        }
     });
 
     function escapeHtml(text) {
