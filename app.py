@@ -1745,6 +1745,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (projectGraphTitle) {
             projectGraphTitle.style.display = 'block';
         }
+
+        projectKnowledgeGraph.style.display = 'block';
         projectKnowledgeGraph.innerHTML = '<p style="padding:12px;">KNOWLEDGE GRAPH WILL BE UPDATED ...</p>';
 
         try {
@@ -1767,6 +1769,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderProjectKnowledgeGraph(projectGraphDataCache, effectiveSelection);
         } catch (error) {
             console.error("Error while loading knowledge graph:", error);
+            projectKnowledgeGraph.style.display = 'block';
             projectKnowledgeGraph.innerHTML = `<div class="error">Fehler beim Laden des Wissensgraphen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
         }
     }
