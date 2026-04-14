@@ -5,7 +5,7 @@
 
 This repository, developed by Stefan Pietrusky, describes a prototype that is to be used as part of the EDUMING concept [[1]](https://arxiv.org/abs/2504.13878). GAMME combines project exploration code editing automated code summarization and AI driven support in one environment to make the modification and extension of GameMaker projects easier and more efficient.
 
-The app is a Flask based tool that helps users inspect adapt and edit GameMaker projects through a browser interface. It lets the user enter a project folder path and then automatically scans the objects inside the project and builds a combined code summary of all object related files. After that the app displays the available object folders and their event files in a structured way so users can open individual events view their GML code and save changes directly from the interface. In addition to manual editing the app includes an AI supported project chat that uses an Ollama Cloud model to analyze the combined project code and suggest practical improvements for the selected GameMaker project. The model is guided by clear formatting rules so that its answers stay concise structured and focused on concrete code changes.
+The app is a Flask based tool that helps users inspect adapt and edit GameMaker projects through a browser interface. It lets the user enter a project folder path and then automatically scans the objects inside the project and builds a combined code summary of all object related files. After that the app displays the available object folders and their event files in a structured way so users can open individual events view their GML code and save changes directly from the interface. The project's objects, which are linked by events, are also represented using a knowledge graph to provide a quick overview. In addition to manual editing the app includes an AI supported project chat that uses an Ollama Cloud model to analyze the combined project code and suggest practical improvements for the selected GameMaker project. The model is guided by clear formatting rules so that its answers stay concise structured and focused on concrete code changes.
 
 > **⚠️ Work in Progress:** This prototyp is currently under active development. While I make it available for research purposes, please be aware that there will be some changes to the functional structure. I recognize that some current technical design decisions may not be optimal and are subject to revision. Researchers using this prototyp should expect potential updates and changes. I recommend checking back regularly for updates and versioning information.
 
@@ -13,7 +13,7 @@ The app is a Flask based tool that helps users inspect adapt and edit GameMaker 
 
 ![GAMMA V2 Interface (Gif by author)](images/GAMMAV2_1.gif)
 
-The current version uses the Ollama Cloud model [qwen3.5:397b-cloud](https://ollama.com/library/qwen3.5:397b-cloud). Depending on your focus, you can swap out the model via the .env file.
+The current version uses the Ollama Cloud model [gpt-oss:120b-cloud](https://ollama.com/library/gpt-oss:120b-cloud). Depending on your focus, you can swap out the model via the .env file.
 
 The repository is being expanded step by step.
 
